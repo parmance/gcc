@@ -2218,6 +2218,7 @@ simplify_binary_operation_1 (enum rtx_code code, machine_mode mode,
   rtx tem, reversed, opleft, opright, elt0, elt1;
   HOST_WIDE_INT val;
   scalar_int_mode int_mode, inner_mode;
+  poly_int64 offset;
 
   /* Even if we can't compute a constant result,
      there are some cases worth simplifying.  */
@@ -2529,6 +2530,12 @@ simplify_binary_operation_1 (enum rtx_code code, machine_mode mode,
 	  if (tem)
 	    return simplify_gen_binary (MINUS, mode, tem, XEXP (op0, 0));
 	}
+
+      if ((GET_CODE (op0) == CONST
+	   || GET_CODE (op0) == SYMBOL_REF
+	   || GET_CODE (op0) == LABEL_REF)
+	  && poly_int_const_p (op1, &offset))
+	return plus_constant (mode, op0, trunc_int_for_mode (-offset, mode));
 
       /* Don't let a relocatable value get a negative coeff.  */
       if (CONST_INT_P (op1) && GET_MODE (op0) != VOIDmode)
@@ -4580,8 +4587,8 @@ simplify_plus_minus (enum rtx_code code, machine_mode mode, rtx op0,
 		       trivial CONST expressions we handle later.  */
 		    if (GET_CODE (tem) == CONST
 			&& GET_CODE (XEXP (tem, 0)) == ncode
-			&& XEXP (XEXP (tem, 0), 0) == lhs
-			&& XEXP (XEXP (tem, 0), 1) == rhs)
+			&& rtx_equal_p (XEXP (XEXP (tem, 0), 0), lhs)
+			&& rtx_equal_p (XEXP (XEXP (tem, 0), 1), rhs))
 		      break;
 		    lneg &= rneg;
 		    if (GET_CODE (tem) == NEG)
@@ -6317,13 +6324,27 @@ simplify_subreg (machine_mode outermode, rtx op,
   scalar_int_mode int_outermode, int_innermode;
   if (is_a <scalar_int_mode> (outermode, &int_outermode)
       && is_a <scalar_int_mode> (innermode, &int_innermode)
-      && (GET_MODE_PRECISION (int_outermode)
-	  < GET_MODE_PRECISION (int_innermode))
       && byte == subreg_lowpart_offset (int_outermode, int_innermode))
     {
-      rtx tem = simplify_truncation (int_outermode, op, int_innermode);
-      if (tem)
-	return tem;
+      /* Handle polynomial integers.  The upper bits of a paradoxical
+	 subreg are undefined, so this is safe regardless of whether
+	 we're truncating or extending.  */
+      if (CONST_POLY_INT_P (op))
+	{
+	  poly_wide_int val
+	    = poly_wide_int::from (const_poly_int_value (op),
+				   GET_MODE_PRECISION (int_outermode),
+				   SIGNED);
+	  return immed_wide_int_const (val, int_outermode);
+	}
+
+      if (GET_MODE_PRECISION (int_outermode)
+	  < GET_MODE_PRECISION (int_innermode))
+	{
+	  rtx tem = simplify_truncation (int_outermode, op, int_innermode);
+	  if (tem)
+	    return tem;
+	}
     }
 
   return NULL_RTX;

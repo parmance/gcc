@@ -280,6 +280,10 @@ struct GTY((variable_size)) hwivec_def {
 #define CWI_PUT_NUM_ELEM(RTX, NUM)					\
   (RTL_FLAG_CHECK1("CWI_PUT_NUM_ELEM", (RTX), CONST_WIDE_INT)->u2.num_elem = (NUM))
 
+struct GTY((variable_size)) const_poly_int_def {
+  trailing_wide_ints<NUM_POLY_INT_COEFFS> coeffs;
+};
+
 /* RTL expression ("rtx").  */
 
 /* The GTY "desc" and "tag" options below are a kludge: we need a desc
@@ -424,6 +428,7 @@ struct GTY((desc("0"), tag("0"),
     struct real_value rv;
     struct fixed_value fv;
     struct hwivec_def hwiv;
+    struct const_poly_int_def cpi;
   } GTY ((special ("rtx_def"), desc ("GET_CODE (&%0)"))) u;
 };
 
@@ -734,6 +739,7 @@ struct GTY(()) rtvec_def {
 #define CASE_CONST_UNIQUE \
    case CONST_INT: \
    case CONST_WIDE_INT: \
+   case CONST_POLY_INT: \
    case CONST_DOUBLE: \
    case CONST_FIXED
 
@@ -741,6 +747,7 @@ struct GTY(()) rtvec_def {
 #define CASE_CONST_ANY \
    case CONST_INT: \
    case CONST_WIDE_INT: \
+   case CONST_POLY_INT: \
    case CONST_DOUBLE: \
    case CONST_FIXED: \
    case CONST_VECTOR
@@ -772,6 +779,11 @@ struct GTY(()) rtvec_def {
 
 /* Predicate yielding nonzero iff X is an rtx for a constant integer.  */
 #define CONST_WIDE_INT_P(X) (GET_CODE (X) == CONST_WIDE_INT)
+
+/* Predicate yielding nonzero iff X is an rtx for a polynomial constant
+   integer.  */
+#define CONST_POLY_INT_P(X) \
+  (NUM_POLY_INT_COEFFS > 1 && GET_CODE (X) == CONST_POLY_INT)
 
 /* Predicate yielding nonzero iff X is an rtx for a constant fixed-point.  */
 #define CONST_FIXED_P(X) (GET_CODE (X) == CONST_FIXED)
@@ -1871,6 +1883,10 @@ set_regno_raw (rtx x, unsigned int regno, unsigned int nregs)
 #define CONST_WIDE_INT_NUNITS(RTX) CWI_GET_NUM_ELEM (RTX)
 #define CONST_WIDE_INT_ELT(RTX, N) CWI_ELT (RTX, N)
 
+#define CONST_POLY_INT_COEFFS(RTX) \
+  (RTL_FLAG_CHECK1("CONST_POLY_INT_COEFFS", (RTX), \
+		   CONST_POLY_INT)->u.cpi.coeffs)
+
 /* For a CONST_DOUBLE:
 #if TARGET_SUPPORTS_WIDE_INT == 0
    For a VOIDmode, there are two integers CONST_DOUBLE_LOW is the
@@ -1901,6 +1917,9 @@ set_regno_raw (rtx x, unsigned int regno, unsigned int nregs)
 
 #define SUBREG_REG(RTX) XCEXP (RTX, 0, SUBREG)
 #define SUBREG_BYTE(RTX) XCUINT (RTX, 1, SUBREG)
+
+/* The number of the parameter in a CONST_PARAM.  */
+#define CONST_PARAM_ID(RTX) XCUINT (RTX, 0, CONST_PARAM)
 
 /* in rtlanal.c */
 /* Return the right cost to give to an operation
@@ -2182,6 +2201,57 @@ inline wide_int
 wi::max_value (machine_mode mode, signop sgn)
 {
   return max_value (GET_MODE_PRECISION (as_a <scalar_mode> (mode)), sgn);
+}
+
+/* Return the value of a CONST_POLY_INT in its native precision.  */
+
+inline poly_int<NUM_POLY_INT_COEFFS, WIDE_INT_REF_FOR (wide_int)>
+const_poly_int_value (const_rtx x)
+{
+  poly_int<NUM_POLY_INT_COEFFS, WIDE_INT_REF_FOR (wide_int)> res;
+  for (unsigned int i = 0; i < NUM_POLY_INT_COEFFS; ++i)
+    res.coeffs[i] = CONST_POLY_INT_COEFFS (x)[i];
+  return res;
+}
+
+/* Return the value of X as a poly_int64.  */
+
+inline poly_int64
+rtx_to_poly_int64 (const_rtx x)
+{
+  if (CONST_POLY_INT_P (x))
+    {
+      poly_int64 res;
+      for (unsigned int i = 0; i < NUM_POLY_INT_COEFFS; ++i)
+	res.coeffs[i] = CONST_POLY_INT_COEFFS (x)[i].to_shwi ();
+      return res;
+    }
+  return INTVAL (x);
+}
+
+/* Return true if arbitrary value X is an integer constant that can
+   be represented as a poly_int64.  Store the value in *RES if so,
+   otherwise leave it unmodified.  */
+
+inline bool
+poly_int_const_p (const_rtx x, poly_int64 *res)
+{
+  if (CONST_INT_P (x))
+    {
+      *res = INTVAL (x);
+      return true;
+    }
+  if (CONST_POLY_INT_P (x))
+    {
+      for (unsigned int i = 0; i < NUM_POLY_INT_COEFFS; ++i)
+	{
+	  if (!wi::fits_shwi_p (CONST_POLY_INT_COEFFS (x)[i]))
+	    return false;
+	  res->coeffs[i] = CONST_POLY_INT_COEFFS (x)[i].to_shwi ();
+	}
+      return true;
+    }
+  return false;
 }
 
 extern void init_rtlanal (void);
@@ -2721,7 +2791,8 @@ get_full_set_src_cost (rtx x, machine_mode mode, struct full_rtx_costs *c)
 
 /* In explow.c */
 extern HOST_WIDE_INT trunc_int_for_mode	(HOST_WIDE_INT, machine_mode);
-extern rtx plus_constant (machine_mode, rtx, HOST_WIDE_INT, bool = false);
+extern poly_int64 trunc_int_for_mode (poly_int64, machine_mode);
+extern rtx plus_constant (machine_mode, rtx, poly_int64, bool = false);
 extern HOST_WIDE_INT get_stack_check_protect (void);
 
 /* In rtl.c */
@@ -3022,13 +3093,11 @@ extern void end_sequence (void);
 extern double_int rtx_to_double_int (const_rtx);
 #endif
 extern void cwi_output_hex (FILE *, const_rtx);
-#ifndef GENERATOR_FILE
-extern rtx immed_wide_int_const (const wide_int_ref &, machine_mode);
-#endif
 #if TARGET_SUPPORTS_WIDE_INT == 0
 extern rtx immed_double_const (HOST_WIDE_INT, HOST_WIDE_INT,
 			       machine_mode);
 #endif
+extern rtx immed_wide_int_const (const poly_wide_int_ref &, machine_mode);
 
 /* In varasm.c  */
 extern rtx force_const_mem (machine_mode, rtx);
@@ -3216,6 +3285,7 @@ extern HOST_WIDE_INT get_integer_term (const_rtx);
 extern rtx get_related_value (const_rtx);
 extern bool offset_within_block_p (const_rtx, HOST_WIDE_INT);
 extern void split_const (rtx, rtx *, rtx *);
+extern rtx strip_offset (rtx, poly_int64 *);
 extern bool unsigned_reg_p (rtx);
 extern int reg_mentioned_p (const_rtx, const_rtx);
 extern int count_occurrences (const_rtx, const_rtx, int);

@@ -13753,6 +13753,9 @@ const_ok_for_output_1 (rtx rtl)
       return false;
     }
 
+  if (CONST_POLY_INT_P (rtl))
+    return false;
+
   if (targetm.const_not_ok_for_debug_p (rtl))
     {
       expansion_failed (NULL_TREE, rtl,

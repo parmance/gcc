@@ -2540,7 +2540,7 @@ expand_shift_1 (enum tree_code code, machine_mode mode, rtx shifted,
 
 rtx
 expand_shift (enum tree_code code, machine_mode mode, rtx shifted,
-	      int amount, rtx target, int unsignedp)
+	      poly_int64 amount, rtx target, int unsignedp)
 {
   return expand_shift_1 (code, mode, shifted,
 			 gen_int_shift_amount (mode, amount),
@@ -5180,6 +5180,10 @@ make_tree (tree type, rtx x)
 	t = build_real (type, *CONST_DOUBLE_REAL_VALUE (x));
 
       return t;
+
+    case CONST_POLY_INT:
+      /* FIXME */
+      gcc_unreachable ();
 
     case CONST_VECTOR:
       {

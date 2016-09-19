@@ -684,6 +684,15 @@ convert_modes (machine_mode mode, machine_mode oldmode, rtx x, int unsignedp)
       return immed_wide_int_const (w, int_mode);
     }
 
+  if (CONST_POLY_INT_P (x)
+      && is_int_mode (mode, &int_mode))
+    {
+      poly_wide_int val = poly_wide_int::from (const_poly_int_value (x),
+					       GET_MODE_PRECISION (int_mode),
+					       unsignedp ? UNSIGNED : SIGNED);
+      return immed_wide_int_const (val, int_mode);
+    }
+
   /* We can do this with a gen_lowpart if both desired and current modes
      are integer, and this is either a constant integer, a register, or a
      non-volatile MEM. */

@@ -613,6 +613,7 @@ namespace wi
      access.  */
   struct storage_ref
   {
+    storage_ref () {}
     storage_ref (const HOST_WIDE_INT *, unsigned int, unsigned int);
 
     const HOST_WIDE_INT *val;
@@ -944,6 +945,8 @@ private:
   HOST_WIDE_INT scratch[2];
 
 public:
+  wide_int_ref_storage () {}
+
   wide_int_ref_storage (const wi::storage_ref &);
   wide_int_ref_storage (const wide_int_ref_storage &);
 
@@ -1344,7 +1347,7 @@ get_binary_result (const T1 &, const T2 &)
   return FIXED_WIDE_INT (N) ();
 }
 
-/* A reference to one element of a trailing_wide_ints structure.  */
+/* A reference to one element of a trailing_2Dwide_intwide_ints structure.  */
 class trailing_wide_int_storage
 {
 private:
@@ -1388,7 +1391,7 @@ namespace wi
    bytes beyond the sizeof need to be allocated.  Use set_precision
    to initialize the structure.  */
 template <int N>
-class GTY(()) trailing_wide_ints
+class GTY((user)) trailing_wide_ints
 {
 private:
   /* The shared precision of each number.  */
@@ -1405,9 +1408,14 @@ private:
   HOST_WIDE_INT m_val[1];
 
 public:
+  typedef WIDE_INT_REF_FOR (trailing_wide_int_storage) const_reference;
+
   void set_precision (unsigned int);
+  unsigned int get_precision () const { return m_precision; }
   trailing_wide_int operator [] (unsigned int);
+  const_reference operator [] (unsigned int) const;
   static size_t extra_size (unsigned int);
+  size_t extra_size () const { return extra_size (m_precision); }
 };
 
 inline trailing_wide_int_storage::
@@ -1477,6 +1485,14 @@ trailing_wide_ints <N>::operator [] (unsigned int index)
 {
   return trailing_wide_int_storage (m_precision, &m_len[index],
 				    &m_val[index * m_max_len]);
+}
+
+template <int N>
+inline typename trailing_wide_ints <N>::const_reference
+trailing_wide_ints <N>::operator [] (unsigned int index) const
+{
+  return wi::storage_ref (&m_val[index * m_max_len],
+			  m_len[index], m_precision);
 }
 
 /* Return how many extra bytes need to be added to the end of the structure
