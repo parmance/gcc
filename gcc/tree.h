@@ -730,8 +730,8 @@ extern void omp_clause_range_check_failed (const_tree, const char *, int,
 #define TYPE_REF_CAN_ALIAS_ALL(NODE) \
   (PTR_OR_REF_CHECK (NODE)->base.static_flag)
 
-/* In an INTEGER_CST, REAL_CST, COMPLEX_CST, or VECTOR_CST, this means
-   there was an overflow in folding.  */
+/* In an INTEGER_CST, REAL_CST, COMPLEX_CST, VECTOR_CST or VEC_DUPLICATE_CST,
+   this means there was an overflow in folding.  */
 
 #define TREE_OVERFLOW(NODE) (CST_CHECK (NODE)->base.public_flag)
 
@@ -1029,6 +1029,10 @@ extern void omp_clause_range_check_failed (const_tree, const char *, int,
 #define VECTOR_CST_NELTS(NODE) (VECTOR_CST_CHECK (NODE)->base.u.nelts)
 #define VECTOR_CST_ELTS(NODE) (VECTOR_CST_CHECK (NODE)->vector.elts)
 #define VECTOR_CST_ELT(NODE,IDX) (VECTOR_CST_CHECK (NODE)->vector.elts[IDX])
+
+/* In a VEC_DUPLICATE_CST node.  */
+#define VEC_DUPLICATE_CST_ELT(NODE) \
+  (VEC_DUPLICATE_CST_CHECK (NODE)->vector.elts[0])
 
 /* Define fields and accessors for some special-purpose tree nodes.  */
 
@@ -4026,6 +4030,7 @@ extern tree build_int_cst (tree, HOST_WIDE_INT);
 extern tree build_int_cstu (tree type, unsigned HOST_WIDE_INT cst);
 extern tree build_int_cst_type (tree, HOST_WIDE_INT);
 extern tree make_vector (unsigned CXX_MEM_STAT_INFO);
+extern tree build_vec_duplicate_cst (tree, tree CXX_MEM_STAT_INFO);
 extern tree build_vector (tree, vec<tree> CXX_MEM_STAT_INFO);
 extern tree build_vector_from_ctor (tree, vec<constructor_elt, va_gc> *);
 extern tree build_vector_from_val (tree, tree);
