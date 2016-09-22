@@ -465,6 +465,7 @@ tree_node_structure_for_code (enum tree_code code)
     case COMPLEX_CST:		return TS_COMPLEX;
     case VECTOR_CST:		return TS_VECTOR;
     case VEC_DUPLICATE_CST:	return TS_VECTOR;
+    case VEC_SERIES_CST:	return TS_VECTOR;
     case STRING_CST:		return TS_STRING;
       /* tcc_exceptional cases.  */
     case ERROR_MARK:		return TS_COMMON;
@@ -818,6 +819,8 @@ tree_code_size (enum tree_code code)
 	case COMPLEX_CST:	return sizeof (struct tree_complex);
 	case VECTOR_CST:	return sizeof (struct tree_vector);
 	case VEC_DUPLICATE_CST:	return sizeof (struct tree_vector);
+	case VEC_SERIES_CST:
+	  return sizeof (struct tree_vector) + sizeof (tree);
 	case STRING_CST:	gcc_unreachable ();
 	default:
 	  return lang_hooks.tree_size (code);
@@ -879,6 +882,9 @@ tree_size (const_tree node)
 
     case VEC_DUPLICATE_CST:
       return sizeof (struct tree_vector);
+
+    case VEC_SERIES_CST:
+      return sizeof (struct tree_vector) + sizeof (tree);
 
     case STRING_CST:
       return TREE_STRING_LENGTH (node) + offsetof (struct tree_string, str) + 1;
@@ -1711,6 +1717,31 @@ build_vec_duplicate_cst (tree type, tree exp MEM_STAT_DECL)
   return t;
 }
 
+/* Build a new VEC_SERIES_CST with type TYPE, base BASE and step STEP.
+
+   Note that this function is only suitable for callers that specifically
+   need a VEC_SERIES_CST node.  Use build_vec_series to build a general
+   series vector from a general base and step.  */
+
+tree
+build_vec_series_cst (tree type, tree base, tree step MEM_STAT_DECL)
+{
+  int length = sizeof (struct tree_vector) + sizeof (tree);
+
+  record_node_allocation_statistics (VEC_SERIES_CST, length);
+
+  tree t = ggc_alloc_cleared_tree_node_stat (length PASS_MEM_STAT);
+
+  TREE_SET_CODE (t, VEC_SERIES_CST);
+  TREE_TYPE (t) = type;
+  t->base.u.nelts = 2;
+  VEC_SERIES_CST_BASE (t) = base;
+  VEC_SERIES_CST_STEP (t) = step;
+  TREE_CONSTANT (t) = 1;
+
+  return t;
+}
+
 /* Build a newly constructed VECTOR_CST node of length LEN.  */
 
 tree
@@ -1819,6 +1850,19 @@ build_vector_from_val (tree vectype, tree sc)
 	CONSTRUCTOR_APPEND_ELT (v, NULL_TREE, sc);
       return build_constructor (vectype, v);
     }
+}
+
+/* Build a vector series of type TYPE in which element I has the value
+   BASE + I * STEP.  */
+
+tree
+build_vec_series (tree type, tree base, tree step)
+{
+  if (integer_zerop (step))
+    return build_vector_from_val (type, base);
+  if (CONSTANT_CLASS_P (base) && CONSTANT_CLASS_P (step))
+    return build_vec_series_cst (type, base, step);
+  return build2 (VEC_SERIES_EXPR, type, base, step);
 }
 
 /* Something has messed with the elements of CONSTRUCTOR C after it was built;
@@ -7136,6 +7180,10 @@ add_expr (const_tree t, inchash::hash &hstate, unsigned int flags)
     case VEC_DUPLICATE_CST:
       inchash::add_expr (VEC_DUPLICATE_CST_ELT (t), hstate);
       return;
+    case VEC_SERIES_CST:
+      inchash::add_expr (VEC_SERIES_CST_BASE (t), hstate);
+      inchash::add_expr (VEC_SERIES_CST_STEP (t), hstate);
+      return;
     case SSA_NAME:
       /* We can just compare by pointer.  */
       hstate.add_hwi (SSA_NAME_VERSION (t));
@@ -11150,6 +11198,7 @@ walk_tree_1 (tree *tp, walk_tree_fn func, void *data,
     case FIXED_CST:
     case VECTOR_CST:
     case VEC_DUPLICATE_CST:
+    case VEC_SERIES_CST:
     case STRING_CST:
     case BLOCK:
     case PLACEHOLDER_EXPR:
@@ -12439,6 +12488,15 @@ drop_tree_overflow (tree t)
   if (TREE_CODE (t) == VEC_DUPLICATE_CST)
     {
       tree *elt = &VEC_DUPLICATE_CST_ELT (t);
+      if (TREE_OVERFLOW (*elt))
+	*elt = drop_tree_overflow (*elt);
+    }
+  if (TREE_CODE (t) == VEC_SERIES_CST)
+    {
+      tree *elt = &VEC_SERIES_CST_BASE (t);
+      if (TREE_OVERFLOW (*elt))
+	*elt = drop_tree_overflow (*elt);
+      elt = &VEC_SERIES_CST_STEP (t);
       if (TREE_OVERFLOW (*elt))
 	*elt = drop_tree_overflow (*elt);
     }

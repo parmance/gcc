@@ -421,6 +421,10 @@ negate_expr_p (tree t)
     case VEC_DUPLICATE_CST:
       return negate_expr_p (VEC_DUPLICATE_CST_ELT (t));
 
+    case VEC_SERIES_CST:
+      return (negate_expr_p (VEC_SERIES_CST_BASE (t))
+	      && negate_expr_p (VEC_SERIES_CST_STEP (t)));
+
     case COMPLEX_EXPR:
       return negate_expr_p (TREE_OPERAND (t, 0))
 	     && negate_expr_p (TREE_OPERAND (t, 1));
@@ -588,6 +592,17 @@ fold_negate_expr_1 (location_t loc, tree t)
 	if (!sub)
 	  return NULL_TREE;
 	return build_vector_from_val (type, sub);
+      }
+
+    case VEC_SERIES_CST:
+      {
+	tree neg_base = fold_negate_expr (loc, VEC_SERIES_CST_BASE (t));
+	if (!neg_base)
+	  return NULL_TREE;
+	tree neg_step = fold_negate_expr (loc, VEC_SERIES_CST_STEP (t));
+	if (!neg_step)
+	  return NULL_TREE;
+	return build_vec_series (type, neg_base, neg_step);
       }
 
     case COMPLEX_EXPR:
@@ -1131,6 +1146,24 @@ int_const_binop (enum tree_code code, const_tree arg1, const_tree arg2)
   return int_const_binop_1 (code, arg1, arg2, 1);
 }
 
+static bool
+vec_series_equivalent_p (const_tree exp, tree *base_out, tree *step_out)
+{
+  if (TREE_CODE (exp) == VEC_SERIES_CST)
+    {
+      *base_out = VEC_SERIES_CST_BASE (exp);
+      *step_out = VEC_SERIES_CST_STEP (exp);
+      return true;
+    }
+  if (TREE_CODE (exp) == VEC_DUPLICATE_CST)
+    {
+      *base_out = VEC_DUPLICATE_CST_ELT (exp);
+      *step_out = build_zero_cst (TREE_TYPE (*base_out));
+      return true;
+    }
+  return false;
+}
+
 /* Combine two constants ARG1 and ARG2 under operation CODE to produce a new
    constant.  We assume ARG1 and ARG2 have the same data type, or at least
    are the same kind of constant and the same machine mode.  Return zero if
@@ -1457,6 +1490,20 @@ const_binop (enum tree_code code, tree arg1, tree arg2)
       return build_vector_from_val (TREE_TYPE (arg1), sub);
     }
 
+  tree base1, step1, base2, step2;
+  if ((code == PLUS_EXPR || code == MINUS_EXPR)
+      && vec_series_equivalent_p (arg1, &base1, &step1)
+      && vec_series_equivalent_p (arg2, &base2, &step2))
+    {
+      tree new_base = const_binop (code, base1, base2);
+      if (!new_base)
+	return NULL_TREE;
+      tree new_step = const_binop (code, step1, step2);
+      if (!new_step)
+	return NULL_TREE;
+      return build_vec_series (TREE_TYPE (arg1), new_base, new_step);
+    }
+
   /* Shifts allow a scalar offset for a vector.  */
   if (TREE_CODE (arg1) == VECTOR_CST
       && TREE_CODE (arg2) == INTEGER_CST)
@@ -1505,6 +1552,12 @@ const_binop (enum tree_code code, tree type, tree arg1, tree arg2)
      result as argument put those cases that need it here.  */
   switch (code)
     {
+    case VEC_SERIES_EXPR:
+      if (CONSTANT_CLASS_P (arg1)
+	  && CONSTANT_CLASS_P (arg2))
+	return build_vec_series (type, arg1, arg2);
+      return NULL_TREE;
+
     case COMPLEX_EXPR:
       if ((TREE_CODE (arg1) == REAL_CST
 	   && TREE_CODE (arg2) == REAL_CST)
@@ -3007,6 +3060,12 @@ operand_equal_p (const_tree arg0, const_tree arg1, unsigned int flags)
       case VEC_DUPLICATE_CST:
 	return operand_equal_p (VEC_DUPLICATE_CST_ELT (arg0),
 				VEC_DUPLICATE_CST_ELT (arg1), flags);
+
+      case VEC_SERIES_CST:
+	return (operand_equal_p (VEC_SERIES_CST_BASE (arg0),
+				 VEC_SERIES_CST_BASE (arg1), flags)
+		&& operand_equal_p (VEC_SERIES_CST_STEP (arg0),
+				    VEC_SERIES_CST_STEP (arg1), flags));
 
       case COMPLEX_CST:
 	return (operand_equal_p (TREE_REALPART (arg0), TREE_REALPART (arg1),
@@ -12167,6 +12226,10 @@ fold_checksum_tree (const_tree expr, struct md5_ctx *ctx,
 	  break;
 	case VEC_DUPLICATE_CST:
 	  fold_checksum_tree (VEC_DUPLICATE_CST_ELT (expr), ctx, ht);
+	  break;
+	case VEC_SERIES_CST:
+	  fold_checksum_tree (VEC_SERIES_CST_BASE (expr), ctx, ht);
+	  fold_checksum_tree (VEC_SERIES_CST_STEP (expr), ctx, ht);
 	  break;
 	default:
 	  break;

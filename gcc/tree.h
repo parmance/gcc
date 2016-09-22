@@ -1034,6 +1034,12 @@ extern void omp_clause_range_check_failed (const_tree, const char *, int,
 #define VEC_DUPLICATE_CST_ELT(NODE) \
   (VEC_DUPLICATE_CST_CHECK (NODE)->vector.elts[0])
 
+/* In a VEC_SERIES_CST node.  */
+#define VEC_SERIES_CST_BASE(NODE) \
+  (VEC_SERIES_CST_CHECK (NODE)->vector.elts[0])
+#define VEC_SERIES_CST_STEP(NODE) \
+  (VEC_SERIES_CST_CHECK (NODE)->vector.elts[1])
+
 /* Define fields and accessors for some special-purpose tree nodes.  */
 
 #define IDENTIFIER_LENGTH(NODE) \
@@ -4031,9 +4037,11 @@ extern tree build_int_cstu (tree type, unsigned HOST_WIDE_INT cst);
 extern tree build_int_cst_type (tree, HOST_WIDE_INT);
 extern tree make_vector (unsigned CXX_MEM_STAT_INFO);
 extern tree build_vec_duplicate_cst (tree, tree CXX_MEM_STAT_INFO);
+extern tree build_vec_series_cst (tree, tree, tree CXX_MEM_STAT_INFO);
 extern tree build_vector (tree, vec<tree> CXX_MEM_STAT_INFO);
 extern tree build_vector_from_ctor (tree, vec<constructor_elt, va_gc> *);
 extern tree build_vector_from_val (tree, tree);
+extern tree build_vec_series (tree, tree, tree);
 extern void recompute_constructor_flags (tree);
 extern void verify_constructor_flags (tree);
 extern tree build_constructor (tree, vec<constructor_elt, va_gc> *);
