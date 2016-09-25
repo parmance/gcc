@@ -6398,6 +6398,15 @@ need_atomic_barrier_p (enum memmodel model, bool pre)
     }
 }
 
+/* Return a constant shift amount for shifting a value of mode MODE
+   by VALUE bits.  */
+
+rtx
+gen_int_shift_amount (machine_mode mode, HOST_WIDE_INT value)
+{
+  return gen_int_mode (value, get_shift_amount_mode (mode));
+}
+
 /* Initialize fields of rtl_data related to stack alignment.  */
 
 void
@@ -6408,6 +6417,5 @@ rtl_data::init_stack_alignment ()
   stack_alignment_estimated = 0;
   preferred_stack_boundary = STACK_BOUNDARY;
 }
-
 
 #include "gt-emit-rtl.h"
