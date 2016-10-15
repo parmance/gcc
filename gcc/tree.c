@@ -12341,7 +12341,7 @@ lookup_binfo_at_offset (tree binfo, tree type, HOST_WIDE_INT pos)
    found, return, otherwise return NULL_TREE.  */
 
 tree
-get_binfo_at_offset (tree binfo, HOST_WIDE_INT offset, tree expected_type)
+get_binfo_at_offset (tree binfo, poly_int64 offset, tree expected_type)
 {
   tree type = BINFO_TYPE (binfo);
 
@@ -12353,7 +12353,7 @@ get_binfo_at_offset (tree binfo, HOST_WIDE_INT offset, tree expected_type)
 
       if (types_same_for_odr (type, expected_type))
 	  return binfo;
-      if (offset < 0)
+      if (may_lt (offset, 0))
 	return NULL_TREE;
 
       for (fld = TYPE_FIELDS (type); fld; fld = DECL_CHAIN (fld))
@@ -12363,7 +12363,7 @@ get_binfo_at_offset (tree binfo, HOST_WIDE_INT offset, tree expected_type)
 
 	  pos = int_bit_position (fld);
 	  size = tree_to_uhwi (DECL_SIZE (fld));
-	  if (pos <= offset && (pos + size) > offset)
+	  if (known_in_range_p (offset, pos, size))
 	    break;
 	}
       if (!fld || TREE_CODE (TREE_TYPE (fld)) != RECORD_TYPE)
@@ -12371,7 +12371,7 @@ get_binfo_at_offset (tree binfo, HOST_WIDE_INT offset, tree expected_type)
 
       /* Offset 0 indicates the primary base, whose vtable contents are
 	 represented in the binfo for the derived class.  */
-      else if (offset != 0)
+      else if (maybe_nonzero (offset))
 	{
 	  tree found_binfo = NULL, base_binfo;
 	  /* Offsets in BINFO are in bytes relative to the whole structure
