@@ -17,6 +17,6 @@ void mydata::Set (float x)
     data[i] = x;
 }
 
-/* For targets without vector loop peeling the loop becomes cheap
-   enough to be vectorized.  */
-/* { dg-final { scan-tree-dump-times "basic block vectorized" 1 "slp1" { xfail { ! vect_peeling_profitable } } } } */
+/* 256-bit vectors will be handled by loop vectorisation instead, since there
+   is no prologue or epilogue that would raise the cost.  */
+/* { dg-final { scan-tree-dump-times "basic block vectorized" 1 "slp1" { xfail { vect256 || aarch64*-*-* } } } } */
