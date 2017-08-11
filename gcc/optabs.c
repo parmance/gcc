@@ -6959,6 +6959,20 @@ valid_multiword_target_p (rtx target)
   return true;
 }
 
+/* Make OP describe an input operand that has value INTVAL and that has
+   no inherent mode.  This function should only be used for operands that
+   are always expand-time constants.  The backend may request that INTVAL
+   be copied into a different kind of rtx, but it must specify the mode
+   of that rtx if so.  */
+
+void
+create_integer_operand (struct expand_operand *op, poly_int64 intval)
+{
+  create_expand_operand (op, EXPAND_INTEGER,
+			 gen_int_mode (intval, MAX_MODE_INT),
+			 VOIDmode, false, intval);
+}
+
 /* Like maybe_legitimize_operand, but do not change the code of the
    current rtx value.  */
 
@@ -7071,7 +7085,9 @@ maybe_legitimize_operand (enum insn_code icode, unsigned int opno,
 
     case EXPAND_INTEGER:
       mode = insn_data[(int) icode].operand[opno].mode;
-      if (mode != VOIDmode && const_int_operand (op->value, mode))
+      if (mode != VOIDmode
+	  && must_eq (trunc_int_for_mode (op->int_value, mode),
+		      op->int_value))
 	goto input;
       break;
     }
