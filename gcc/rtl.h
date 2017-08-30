@@ -1625,7 +1625,8 @@ extern const char * const reg_note_name[];
    for which NOTE_MARKER_LOCATION can be used.  */
 #define NOTE_MARKER_P(INSN)				\
   (NOTE_P (INSN) &&					\
-   (NOTE_KIND (INSN) == NOTE_INSN_BEGIN_STMT))
+   (NOTE_KIND (INSN) == NOTE_INSN_BEGIN_STMT		\
+    || NOTE_KIND (INSN) == NOTE_INSN_INLINE_ENTRY))
 
 /* Variable declaration and the location of a variable.  */
 #define PAT_VAR_LOCATION_DECL(PAT) (XCTREE ((PAT), 0, VAR_LOCATION))
@@ -1663,6 +1664,8 @@ extern const char * const reg_note_name[];
   (GET_CODE (PATTERN (INSN)) == DEBUG_MARKER	  \
    ? (GET_MODE (PATTERN (INSN)) == VOIDmode	  \
       ? NOTE_INSN_BEGIN_STMT			  \
+      : GET_MODE (PATTERN (INSN)) == BLKmode	  \
+      ? NOTE_INSN_INLINE_ENTRY			  \
       : (enum insn_note)-1) 			  \
    : (enum insn_note)-1)
 
