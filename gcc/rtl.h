@@ -3879,7 +3879,7 @@ extern rtx gen_const_mem (machine_mode, rtx);
 extern rtx gen_frame_mem (machine_mode, rtx);
 extern rtx gen_tmp_stack_mem (machine_mode, rtx);
 extern bool validate_subreg (machine_mode, machine_mode,
-			     const_rtx, poly_int64);
+			     const_rtx, poly_uint64);
 
 /* In combine.c  */
 extern unsigned int extended_count (const_rtx, machine_mode, int);
