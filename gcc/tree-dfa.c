@@ -419,7 +419,7 @@ get_ref_base_and_extent (tree exp, poly_int64 *poffset,
       switch (TREE_CODE (exp))
 	{
 	case BIT_FIELD_REF:
-	  bit_offset += wi::to_offset (TREE_OPERAND (exp, 2));
+	  bit_offset += wi::to_poly_offset (TREE_OPERAND (exp, 2));
 	  break;
 
 	case COMPONENT_REF:
@@ -709,7 +709,8 @@ get_addr_base_and_unit_offset_1 (tree exp, poly_int64 *poffset,
 				 tree (*valueize) (tree))
 {
   poly_int64 byte_offset = 0;
-  poly_int64 suboffset;
+  poly_int64 sub_byte_offset;
+  poly_uint64 sub_bit_offset;
 
   /* Compute cumulative byte-offset for nested component-refs and array-refs,
      and find the ultimate containing object.  */
@@ -718,12 +719,10 @@ get_addr_base_and_unit_offset_1 (tree exp, poly_int64 *poffset,
       switch (TREE_CODE (exp))
 	{
 	case BIT_FIELD_REF:
-	  {
-	    HOST_WIDE_INT this_off = TREE_INT_CST_LOW (TREE_OPERAND (exp, 2));
-	    if (this_off % BITS_PER_UNIT)
-	      return NULL_TREE;
-	    byte_offset += this_off / BITS_PER_UNIT;
-	  }
+	  if (!poly_tree_p (TREE_OPERAND (exp, 2), &sub_bit_offset)
+	      || !multiple_p (sub_bit_offset, BITS_PER_UNIT, &sub_byte_offset))
+	    return NULL_TREE;
+	  byte_offset += sub_byte_offset;
 	  break;
 
 	case COMPONENT_REF:
