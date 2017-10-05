@@ -915,17 +915,17 @@ gen_tmp_stack_mem (machine_mode mode, rtx addr)
 
 bool
 validate_subreg (machine_mode omode, machine_mode imode,
-		 const_rtx reg, unsigned int offset)
+		 const_rtx reg, poly_int64 offset)
 {
   unsigned int isize = GET_MODE_SIZE (imode);
   unsigned int osize = GET_MODE_SIZE (omode);
 
   /* All subregs must be aligned.  */
-  if (offset % osize != 0)
+  if (!multiple_p (offset, osize))
     return false;
 
   /* The subreg offset cannot be outside the inner object.  */
-  if (offset >= isize)
+  if (may_ge (offset, isize))
     return false;
 
   unsigned int regsize = REGMODE_NATURAL_SIZE (imode);
@@ -970,7 +970,7 @@ validate_subreg (machine_mode omode, machine_mode imode,
 
   /* Paradoxical subregs must have offset zero.  */
   if (osize > isize)
-    return offset == 0;
+    return known_zero (offset);
 
   /* This is a normal subreg.  Verify that the offset is representable.  */
 
@@ -1002,18 +1002,20 @@ validate_subreg (machine_mode omode, machine_mode imode,
   if (osize < regsize
       && ! (lra_in_progress && (FLOAT_MODE_P (imode) || FLOAT_MODE_P (omode))))
     {
-      unsigned int block_size = MIN (isize, regsize);
-      unsigned int offset_within_block = offset % block_size;
-      if (BYTES_BIG_ENDIAN
-	  ? offset_within_block != block_size - osize
-	  : offset_within_block != 0)
+      poly_int64 block_size = MIN (isize, regsize);
+      HOST_WIDE_INT start_reg;
+      poly_int64 offset_within_reg;
+      if (!can_div_trunc_p (offset, block_size, &start_reg, &offset_within_reg)
+	  || (BYTES_BIG_ENDIAN
+	      ? may_ne (offset_within_reg, block_size - osize)
+	      : may_ne (offset_within_reg, 0)))
 	return false;
     }
   return true;
 }
 
 rtx
-gen_rtx_SUBREG (machine_mode mode, rtx reg, int offset)
+gen_rtx_SUBREG (machine_mode mode, rtx reg, poly_int64 offset)
 {
   gcc_assert (validate_subreg (mode, GET_MODE (reg), reg, offset));
   return gen_rtx_raw_SUBREG (mode, reg, offset);
@@ -1114,7 +1116,7 @@ gen_rtvec_v (int n, rtx_insn **argp)
    paradoxical lowpart, in which case the offset will be negative
    on big-endian targets.  */
 
-int
+poly_int64
 byte_lowpart_offset (machine_mode outer_mode,
 		     machine_mode inner_mode)
 {
@@ -1128,13 +1130,13 @@ byte_lowpart_offset (machine_mode outer_mode,
    from address X.  For paradoxical big-endian subregs this is a
    negative value, otherwise it's the same as OFFSET.  */
 
-int
+poly_int64
 subreg_memory_offset (machine_mode outer_mode, machine_mode inner_mode,
-		      unsigned int offset)
+		      poly_int64 offset)
 {
   if (paradoxical_subreg_p (outer_mode, inner_mode))
     {
-      gcc_assert (offset == 0);
+      gcc_assert (known_zero (offset));
       return -subreg_lowpart_offset (inner_mode, outer_mode);
     }
   return offset;
@@ -1144,7 +1146,7 @@ subreg_memory_offset (machine_mode outer_mode, machine_mode inner_mode,
    if SUBREG_REG (X) were stored in memory.  The only significant thing
    about the current SUBREG_REG is its mode.  */
 
-int
+poly_int64
 subreg_memory_offset (const_rtx x)
 {
   return subreg_memory_offset (GET_MODE (x), GET_MODE (SUBREG_REG (x)),
@@ -1650,7 +1652,7 @@ gen_highpart_mode (machine_mode outermode, machine_mode innermode, rtx exp)
 /* Return the SUBREG_BYTE for a lowpart subreg whose outer mode has
    OUTER_BYTES bytes and whose inner mode has INNER_BYTES bytes.  */
 
-unsigned int
+poly_int64
 subreg_size_lowpart_offset (unsigned int outer_bytes, unsigned int inner_bytes)
 {
   if (outer_bytes > inner_bytes)
@@ -1668,7 +1670,7 @@ subreg_size_lowpart_offset (unsigned int outer_bytes, unsigned int inner_bytes)
 /* Return the SUBREG_BYTE for a highpart subreg whose outer mode has
    OUTER_BYTES bytes and whose inner mode has INNER_BYTES bytes.  */
 
-unsigned int
+poly_int64
 subreg_size_highpart_offset (unsigned int outer_bytes,
 			     unsigned int inner_bytes)
 {
@@ -1696,8 +1698,9 @@ subreg_lowpart_p (const_rtx x)
   else if (GET_MODE (SUBREG_REG (x)) == VOIDmode)
     return 0;
 
-  return (subreg_lowpart_offset (GET_MODE (x), GET_MODE (SUBREG_REG (x)))
-	  == SUBREG_BYTE (x));
+  return must_eq (subreg_lowpart_offset (GET_MODE (x),
+					 GET_MODE (SUBREG_REG (x))),
+		  SUBREG_BYTE (x));
 }
 
 /* Return subword OFFSET of operand OP.
@@ -5749,6 +5752,7 @@ copy_insn_1 (rtx orig)
       case 't':
       case 'w':
       case 'i':
+      case 'p':
       case 's':
       case 'S':
       case 'u':

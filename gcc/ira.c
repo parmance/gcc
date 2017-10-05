@@ -4048,10 +4048,13 @@ static bool
 get_subreg_tracking_sizes (rtx x, HOST_WIDE_INT *outer_size,
 			   HOST_WIDE_INT *inner_size, HOST_WIDE_INT *start)
 {
+  HOST_WIDE_INT tmp_start;
   rtx reg = regno_reg_rtx[REGNO (SUBREG_REG (x))];
+  if (!SUBREG_BYTE (x).is_constant (&tmp_start))
+    return false;
   *outer_size = GET_MODE_SIZE (GET_MODE (x));
   *inner_size = GET_MODE_SIZE (GET_MODE (reg));
-  *start = SUBREG_BYTE (x);
+  *start = tmp_start;
   return true;
 }
 
