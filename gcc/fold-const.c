@@ -14241,6 +14241,7 @@ fold_indirect_ref_1 (location_t loc, tree type, tree op0)
 {
   tree sub = op0;
   tree subtype;
+  poly_uint64 const_op01;
 
   STRIP_NOPS (sub);
   subtype = TREE_TYPE (sub);
@@ -14295,7 +14296,7 @@ fold_indirect_ref_1 (location_t loc, tree type, tree op0)
     }
 
   if (TREE_CODE (sub) == POINTER_PLUS_EXPR
-      && TREE_CODE (TREE_OPERAND (sub, 1)) == INTEGER_CST)
+      && poly_tree_p (TREE_OPERAND (sub, 1), &const_op01))
     {
       tree op00 = TREE_OPERAND (sub, 0);
       tree op01 = TREE_OPERAND (sub, 1);
@@ -14312,15 +14313,12 @@ fold_indirect_ref_1 (location_t loc, tree type, tree op0)
 	      && type == TREE_TYPE (op00type))
 	    {
 	      tree part_width = TYPE_SIZE (type);
-	      unsigned HOST_WIDE_INT max_offset
+	      poly_uint64 max_offset
 		= (tree_to_uhwi (part_width) / BITS_PER_UNIT
 		   * TYPE_VECTOR_SUBPARTS (op00type));
-	      if (tree_int_cst_sign_bit (op01) == 0
-		  && compare_tree_int (op01, max_offset) == -1)
+	      if (must_lt (const_op01, max_offset))
 		{
-		  unsigned HOST_WIDE_INT offset = tree_to_uhwi (op01);
-		  unsigned HOST_WIDE_INT indexi = offset * BITS_PER_UNIT;
-		  tree index = bitsize_int (indexi);
+		  tree index = bitsize_int (const_op01 * BITS_PER_UNIT);
 		  return fold_build3_loc (loc,
 					  BIT_FIELD_REF, type, op00,
 					  part_width, index);
@@ -14330,8 +14328,7 @@ fold_indirect_ref_1 (location_t loc, tree type, tree op0)
 	  else if (TREE_CODE (op00type) == COMPLEX_TYPE
 		   && type == TREE_TYPE (op00type))
 	    {
-	      tree size = TYPE_SIZE_UNIT (type);
-	      if (tree_int_cst_equal (size, op01))
+	      if (equal_tree_size (TYPE_SIZE_UNIT (type), const_op01))
 		return fold_build1_loc (loc, IMAGPART_EXPR, type, op00);
 	    }
 	  /* ((foo *)&fooarray)[1] => fooarray[1] */
