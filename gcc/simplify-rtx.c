@@ -1227,7 +1227,7 @@ simplify_unary_operation_1 (enum rtx_code code, machine_mode mode, rtx op)
 
       /* If we know that the value is already truncated, we can
 	 replace the TRUNCATE with a SUBREG.  */
-      if (GET_MODE_NUNITS (mode) == 1
+      if (must_eq (GET_MODE_NUNITS (mode), 1)
 	  && (TRULY_NOOP_TRUNCATION_MODES_P (mode, GET_MODE (op))
 	      || truncated_to_mode (mode, op)))
 	{
@@ -1743,9 +1743,10 @@ simplify_const_unary_operation (enum rtx_code code, machine_mode mode,
       }
       if (CONST_SCALAR_INT_P (op) || CONST_DOUBLE_AS_FLOAT_P (op))
 	return gen_const_vec_duplicate (mode, op);
-      if (GET_CODE (op) == CONST_VECTOR)
+      unsigned int n_elts;
+      if (GET_CODE (op) == CONST_VECTOR
+	  && GET_MODE_NUNITS (mode).is_constant (&n_elts))
 	{
-	  unsigned int n_elts = GET_MODE_NUNITS (mode);
 	  unsigned int in_n_elts = CONST_VECTOR_NUNITS (op);
 	  gcc_assert (in_n_elts < n_elts);
 	  gcc_assert ((n_elts % in_n_elts) == 0);
@@ -1758,15 +1759,14 @@ simplify_const_unary_operation (enum rtx_code code, machine_mode mode,
 
   if (VECTOR_MODE_P (mode) && GET_CODE (op) == CONST_VECTOR)
     {
-      int elt_size = GET_MODE_UNIT_SIZE (mode);
-      unsigned n_elts = (GET_MODE_SIZE (mode) / elt_size);
       machine_mode opmode = GET_MODE (op);
-      int op_elt_size = GET_MODE_UNIT_SIZE (opmode);
-      unsigned op_n_elts = (GET_MODE_SIZE (opmode) / op_elt_size);
+      unsigned int n_elts = CONST_VECTOR_NUNITS (op);
+      gcc_assert (must_eq (GET_MODE_NUNITS (mode), n_elts));
+      gcc_assert (must_eq (GET_MODE_NUNITS (opmode), n_elts));
+
       rtvec v = rtvec_alloc (n_elts);
       unsigned int i;
 
-      gcc_assert (op_n_elts == n_elts);
       for (i = 0; i < n_elts; i++)
 	{
 	  rtx x = simplify_unary_operation (code, GET_MODE_INNER (mode),
@@ -3598,12 +3598,13 @@ simplify_binary_operation_1 (enum rtx_code code, machine_mode mode,
 	     nested VEC_SELECT expressions.  When input operand is a memory
 	     operand, this operation can be simplified to a simple scalar
 	     load from an offseted memory address.  */
-	  if (GET_CODE (trueop0) == VEC_SELECT)
+	  int n_elts;
+	  if (GET_CODE (trueop0) == VEC_SELECT
+	      && (GET_MODE_NUNITS (GET_MODE (XEXP (trueop0, 0)))
+		  .is_constant (&n_elts)))
 	    {
 	      rtx op0 = XEXP (trueop0, 0);
 	      rtx op1 = XEXP (trueop0, 1);
-
-	      int n_elts = GET_MODE_NUNITS (GET_MODE (op0));
 
 	      int i = INTVAL (XVECEXP (trueop1, 0, 0));
 	      int elem;
@@ -3629,9 +3630,11 @@ simplify_binary_operation_1 (enum rtx_code code, machine_mode mode,
 		  mode00 = GET_MODE (op00);
 		  mode01 = GET_MODE (op01);
 
-		  /* Find out number of elements of each operand.  */
-		  n_elts00 = GET_MODE_NUNITS (mode00);
-		  n_elts01 = GET_MODE_NUNITS (mode01);
+		  /* Find out the number of elements of each operand.
+		     Since the concatenated result has a constant number
+		     of elements, the operands must too.  */
+		  n_elts00 = GET_MODE_NUNITS (mode00).to_constant ();
+		  n_elts01 = GET_MODE_NUNITS (mode01).to_constant ();
 
 		  gcc_assert (n_elts == n_elts00 + n_elts01);
 
@@ -3670,12 +3673,11 @@ simplify_binary_operation_1 (enum rtx_code code, machine_mode mode,
 
 	  if (GET_CODE (trueop0) == CONST_VECTOR)
 	    {
-	      int elt_size = GET_MODE_UNIT_SIZE (mode);
-	      unsigned n_elts = (GET_MODE_SIZE (mode) / elt_size);
+	      unsigned n_elts = XVECLEN (trueop1, 0);
 	      rtvec v = rtvec_alloc (n_elts);
 	      unsigned int i;
 
-	      gcc_assert (XVECLEN (trueop1, 0) == (int) n_elts);
+	      gcc_assert (must_eq (n_elts, GET_MODE_NUNITS (mode)));
 	      for (i = 0; i < n_elts; i++)
 		{
 		  rtx x = XVECEXP (trueop1, 0, i);
@@ -3744,15 +3746,18 @@ simplify_binary_operation_1 (enum rtx_code code, machine_mode mode,
 	    }
 
 	  /* If we select one half of a vec_concat, return that.  */
+	  int l0, l1;
 	  if (GET_CODE (trueop0) == VEC_CONCAT
+	      && (GET_MODE_NUNITS (GET_MODE (XEXP (trueop0, 0)))
+		  .is_constant (&l0))
+	      && (GET_MODE_NUNITS (GET_MODE (XEXP (trueop0, 1)))
+		  .is_constant (&l1))
 	      && CONST_INT_P (XVECEXP (trueop1, 0, 0)))
 	    {
 	      rtx subop0 = XEXP (trueop0, 0);
 	      rtx subop1 = XEXP (trueop0, 1);
 	      machine_mode mode0 = GET_MODE (subop0);
 	      machine_mode mode1 = GET_MODE (subop1);
-	      int l0 = GET_MODE_NUNITS (mode0);
-	      int l1 = GET_MODE_NUNITS (mode1);
 	      int i0 = INTVAL (XVECEXP (trueop1, 0, 0));
 	      if (i0 == 0 && !side_effects_p (op1) && mode == mode0)
 		{
@@ -3859,7 +3864,7 @@ simplify_binary_operation_1 (enum rtx_code code, machine_mode mode,
 	{
 	  rtx op0_subop1 = XEXP (trueop0, 1);
 	  gcc_assert (GET_CODE (op0_subop1) == PARALLEL);
-	  gcc_assert (XVECLEN (trueop1, 0) == GET_MODE_NUNITS (mode));
+	  gcc_assert (must_eq (XVECLEN (trueop1, 0), GET_MODE_NUNITS (mode)));
 
 	  /* Apply the outer ordering vector to the inner one.  (The inner
 	     ordering vector is expressly permitted to be of a different
@@ -3903,15 +3908,16 @@ simplify_binary_operation_1 (enum rtx_code code, machine_mode mode,
 	else
 	  gcc_assert (GET_MODE_INNER (mode) == op1_mode);
 
+	unsigned int n_elts, in_n_elts;
 	if ((GET_CODE (trueop0) == CONST_VECTOR
 	     || CONST_SCALAR_INT_P (trueop0) 
 	     || CONST_DOUBLE_AS_FLOAT_P (trueop0))
 	    && (GET_CODE (trueop1) == CONST_VECTOR
 		|| CONST_SCALAR_INT_P (trueop1) 
-		|| CONST_DOUBLE_AS_FLOAT_P (trueop1)))
+		|| CONST_DOUBLE_AS_FLOAT_P (trueop1))
+	    && GET_MODE_NUNITS (mode).is_constant (&n_elts)
+	    && GET_MODE_NUNITS (op0_mode).is_constant (&in_n_elts))
 	  {
-	    unsigned n_elts = GET_MODE_NUNITS (mode);
-	    unsigned in_n_elts = GET_MODE_NUNITS (op0_mode);
 	    rtvec v = rtvec_alloc (n_elts);
 	    unsigned int i;
 	    for (i = 0; i < n_elts; i++)
@@ -4003,7 +4009,7 @@ simplify_const_binary_operation (enum rtx_code code, machine_mode mode,
     {
       unsigned int n_elts = CONST_VECTOR_NUNITS (op0);
       gcc_assert (n_elts == (unsigned int) CONST_VECTOR_NUNITS (op1));
-      gcc_assert (n_elts == GET_MODE_NUNITS (mode));
+      gcc_assert (must_eq (n_elts, GET_MODE_NUNITS (mode)));
       rtvec v = rtvec_alloc (n_elts);
       unsigned int i;
 
@@ -4029,7 +4035,9 @@ simplify_const_binary_operation (enum rtx_code code, machine_mode mode,
 	  || CONST_DOUBLE_AS_FLOAT_P (op1)
 	  || GET_CODE (op1) == CONST_FIXED))
     {
-      unsigned n_elts = GET_MODE_NUNITS (mode);
+      /* Both inputs have a constant number of elements, so the result
+	 must too.  */
+      unsigned n_elts = GET_MODE_NUNITS (mode).to_constant ();
       rtvec v = rtvec_alloc (n_elts);
 
       gcc_assert (n_elts >= 2);
@@ -4043,8 +4051,8 @@ simplify_const_binary_operation (enum rtx_code code, machine_mode mode,
 	}
       else
 	{
-	  unsigned op0_n_elts = GET_MODE_NUNITS (GET_MODE (op0));
-	  unsigned op1_n_elts = GET_MODE_NUNITS (GET_MODE (op1));
+	  unsigned op0_n_elts = GET_MODE_NUNITS (GET_MODE (op0)).to_constant ();
+	  unsigned op1_n_elts = GET_MODE_NUNITS (GET_MODE (op1)).to_constant ();
 	  unsigned i;
 
 	  gcc_assert (GET_CODE (op0) == CONST_VECTOR);
@@ -5496,6 +5504,7 @@ simplify_ternary_operation (enum rtx_code code, machine_mode mode,
   bool any_change = false;
   rtx tem, trueop2;
   scalar_int_mode int_mode, int_op0_mode;
+  unsigned int n_elts;
 
   switch (code)
     {
@@ -5681,9 +5690,9 @@ simplify_ternary_operation (enum rtx_code code, machine_mode mode,
       gcc_assert (GET_MODE (op1) == mode);
       gcc_assert (VECTOR_MODE_P (mode));
       trueop2 = avoid_constant_pool_reference (op2);
-      if (CONST_INT_P (trueop2))
+      if (CONST_INT_P (trueop2)
+	  && GET_MODE_NUNITS (mode).is_constant (&n_elts))
 	{
-	  unsigned n_elts = GET_MODE_NUNITS (mode);
 	  unsigned HOST_WIDE_INT sel = UINTVAL (trueop2);
 	  unsigned HOST_WIDE_INT mask;
 	  if (n_elts == HOST_BITS_PER_WIDE_INT)
@@ -5747,7 +5756,7 @@ simplify_ternary_operation (enum rtx_code code, machine_mode mode,
 	  if (GET_CODE (op0) == VEC_DUPLICATE
 	      && GET_CODE (XEXP (op0, 0)) == VEC_SELECT
 	      && GET_CODE (XEXP (XEXP (op0, 0), 1)) == PARALLEL
-	      && mode_nunits[GET_MODE (XEXP (op0, 0))] == 1)
+	      && must_eq (GET_MODE_NUNITS (GET_MODE (XEXP (op0, 0))), 1))
 	    {
 	      tem = XVECEXP ((XEXP (XEXP (op0, 0), 1)), 0, 0);
 	      if (CONST_INT_P (tem) && CONST_INT_P (op2))
@@ -6507,7 +6516,7 @@ test_vector_ops_duplicate (machine_mode mode, rtx scalar_reg)
 {
   scalar_mode inner_mode = GET_MODE_INNER (mode);
   rtx duplicate = gen_rtx_VEC_DUPLICATE (mode, scalar_reg);
-  unsigned int nunits = GET_MODE_NUNITS (mode);
+  poly_uint64 nunits = GET_MODE_NUNITS (mode);
   if (GET_MODE_CLASS (mode) == MODE_VECTOR_INT)
     {
       /* Test some simple unary cases with VEC_DUPLICATE arguments.  */
@@ -6544,11 +6553,15 @@ test_vector_ops_duplicate (machine_mode mode, rtx scalar_reg)
 						duplicate, zero_par));
 
   /* And again with the final element.  */
-  rtx last_index = gen_int_mode (GET_MODE_NUNITS (mode) - 1, word_mode);
-  rtx last_par = gen_rtx_PARALLEL (VOIDmode, gen_rtvec (1, last_index));
-  ASSERT_RTX_PTR_EQ (scalar_reg,
-		     simplify_binary_operation (VEC_SELECT, inner_mode,
-						duplicate, last_par));
+  unsigned HOST_WIDE_INT const_nunits;
+  if (nunits.is_constant (&const_nunits))
+    {
+      rtx last_index = gen_int_mode (const_nunits - 1, word_mode);
+      rtx last_par = gen_rtx_PARALLEL (VOIDmode, gen_rtvec (1, last_index));
+      ASSERT_RTX_PTR_EQ (scalar_reg,
+			 simplify_binary_operation (VEC_SELECT, inner_mode,
+						    duplicate, last_par));
+    }
 
   /* Test a scalar subreg of a VEC_DUPLICATE.  */
   poly_int64 offset = subreg_lowpart_offset (inner_mode, mode);
@@ -6557,7 +6570,7 @@ test_vector_ops_duplicate (machine_mode mode, rtx scalar_reg)
 				      mode, offset));
 
   machine_mode narrower_mode;
-  if (nunits > 2
+  if (may_gt (nunits, 2U)
       && mode_for_vector (inner_mode, 2).exists (&narrower_mode)
       && VECTOR_MODE_P (narrower_mode))
     {
@@ -6645,7 +6658,7 @@ test_vector_ops ()
 	  rtx scalar_reg = make_test_reg (GET_MODE_INNER (mode));
 	  test_vector_ops_duplicate (mode, scalar_reg);
 	  if (GET_MODE_CLASS (mode) == MODE_VECTOR_INT
-	      && GET_MODE_NUNITS (mode) > 2)
+	      && may_gt (GET_MODE_NUNITS (mode), 2))
 	    test_vector_ops_series (mode, scalar_reg);
 	}
     }
