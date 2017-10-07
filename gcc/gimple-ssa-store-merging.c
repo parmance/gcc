@@ -401,8 +401,11 @@ encode_tree_to_bitpos (tree expr, unsigned char *ptr, int bitlen, int bitpos,
     The awkwardness comes from the fact that bitpos is counted from the
     most significant bit of a byte.  */
 
+  /* We must be dealing with fixed-size data at this point, since the
+     total size is also fixed.  */
+  fixed_size_mode mode = as_a <fixed_size_mode> (TYPE_MODE (TREE_TYPE (expr)));
   /* Allocate an extra byte so that we have space to shift into.  */
-  unsigned int byte_size = GET_MODE_SIZE (TYPE_MODE (TREE_TYPE (expr))) + 1;
+  unsigned int byte_size = GET_MODE_SIZE (mode) + 1;
   unsigned char *tmpbuf = XALLOCAVEC (unsigned char, byte_size);
   memset (tmpbuf, '\0', byte_size);
   /* The store detection code should only have allowed constants that are
@@ -1325,8 +1328,9 @@ lhs_valid_for_store_merging_p (tree lhs)
 static bool
 rhs_valid_for_store_merging_p (tree rhs)
 {
-  return native_encode_expr (rhs, NULL,
-			     GET_MODE_SIZE (TYPE_MODE (TREE_TYPE (rhs)))) != 0;
+  unsigned HOST_WIDE_INT size;
+  return (GET_MODE_SIZE (TYPE_MODE (TREE_TYPE (rhs))).is_constant (&size)
+	  && native_encode_expr (rhs, NULL, size) != 0);
 }
 
 /* Entry point for the pass.  Go over each basic block recording chains of
