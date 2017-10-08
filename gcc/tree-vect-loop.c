@@ -182,11 +182,11 @@ vect_determine_vectorization_factor (loop_vec_info loop_vinfo)
   struct loop *loop = LOOP_VINFO_LOOP (loop_vinfo);
   basic_block *bbs = LOOP_VINFO_BBS (loop_vinfo);
   unsigned nbbs = loop->num_nodes;
-  unsigned int vectorization_factor = 0;
+  poly_uint64 vectorization_factor = 1;
   tree scalar_type = NULL_TREE;
   gphi *phi;
   tree vectype;
-  unsigned int nunits;
+  poly_uint64 nunits;
   stmt_vec_info stmt_info;
   unsigned i;
   HOST_WIDE_INT dummy;
@@ -255,14 +255,14 @@ vect_determine_vectorization_factor (loop_vec_info loop_vinfo)
                   dump_printf (MSG_NOTE, "\n");
 		}
 
-	      nunits = TYPE_VECTOR_SUBPARTS (vectype);
 	      if (dump_enabled_p ())
-		dump_printf_loc (MSG_NOTE, vect_location, "nunits = %d\n",
-                                 nunits);
+		{
+		  dump_printf_loc (MSG_NOTE, vect_location, "nunits = ");
+		  dump_dec (MSG_NOTE, TYPE_VECTOR_SUBPARTS (vectype));
+		  dump_printf (MSG_NOTE, "\n");
+		}
 
-	      if (!vectorization_factor
-		  || (nunits > vectorization_factor))
-		vectorization_factor = nunits;
+	      vect_update_max_nunits (&vectorization_factor, vectype);
 	    }
 	}
 
@@ -550,12 +550,14 @@ vect_determine_vectorization_factor (loop_vec_info loop_vinfo)
               dump_printf (MSG_NOTE, "\n");
 	    }
 
-	  nunits = TYPE_VECTOR_SUBPARTS (vf_vectype);
 	  if (dump_enabled_p ())
-	    dump_printf_loc (MSG_NOTE, vect_location, "nunits = %d\n", nunits);
-	  if (!vectorization_factor
-	      || (nunits > vectorization_factor))
-	    vectorization_factor = nunits;
+	    {
+	      dump_printf_loc (MSG_NOTE, vect_location, "nunits = ");
+	      dump_dec (MSG_NOTE, TYPE_VECTOR_SUBPARTS (vf_vectype));
+	      dump_printf (MSG_NOTE, "\n");
+	    }
+
+	  vect_update_max_nunits (&vectorization_factor, vf_vectype);
 
 	  if (!analyze_pattern_stmt && gsi_end_p (pattern_def_si))
 	    {
@@ -567,9 +569,13 @@ vect_determine_vectorization_factor (loop_vec_info loop_vinfo)
 
   /* TODO: Analyze cost. Decide if worth while to vectorize.  */
   if (dump_enabled_p ())
-    dump_printf_loc (MSG_NOTE, vect_location, "vectorization factor = %d\n",
-                     vectorization_factor);
-  if (vectorization_factor <= 1)
+    {
+      dump_printf_loc (MSG_NOTE, vect_location, "vectorization factor = ");
+      dump_dec (MSG_NOTE, vectorization_factor);
+      dump_printf (MSG_NOTE, "\n");
+    }
+
+  if (must_le (vectorization_factor, 1U))
     {
       if (dump_enabled_p ())
         dump_printf_loc (MSG_MISSED_OPTIMIZATION, vect_location,
@@ -631,8 +637,8 @@ vect_determine_vectorization_factor (loop_vec_info loop_vinfo)
 
 	      if (!mask_type)
 		mask_type = vectype;
-	      else if (TYPE_VECTOR_SUBPARTS (mask_type)
-		       != TYPE_VECTOR_SUBPARTS (vectype))
+	      else if (may_ne (TYPE_VECTOR_SUBPARTS (mask_type),
+			       TYPE_VECTOR_SUBPARTS (vectype)))
 		{
 		  if (dump_enabled_p ())
 		    {
@@ -4149,7 +4155,8 @@ get_initial_defs_for_reduction (slp_tree slp_node,
 
   vector_type = STMT_VINFO_VECTYPE (stmt_vinfo);
   scalar_type = TREE_TYPE (vector_type);
-  nunits = TYPE_VECTOR_SUBPARTS (vector_type);
+  /* Enforced by the caller.  */
+  nunits = TYPE_VECTOR_SUBPARTS (vector_type).to_constant ();
 
   gcc_assert (STMT_VINFO_DEF_TYPE (stmt_vinfo) == vect_reduction_def);
 
@@ -7670,9 +7677,8 @@ vect_transform_loop (loop_vec_info loop_vinfo)
 
 	  if (STMT_VINFO_VECTYPE (stmt_info))
 	    {
-	      unsigned int nunits
-		= (unsigned int)
-		  TYPE_VECTOR_SUBPARTS (STMT_VINFO_VECTYPE (stmt_info));
+	      poly_uint64 nunits
+		= TYPE_VECTOR_SUBPARTS (STMT_VINFO_VECTYPE (stmt_info));
 	      if (!STMT_SLP_TYPE (stmt_info)
 		  && may_ne (nunits, vf)
 		  && dump_enabled_p ())
