@@ -14156,9 +14156,9 @@ fold_relational_const (enum tree_code code, tree type, tree op0, tree op1)
 	      tree elem0 = VECTOR_CST_ELT (op0, i);
 	      tree elem1 = VECTOR_CST_ELT (op1, i);
 	      tree tmp = fold_relational_const (code, type, elem0, elem1);
-	      if (tmp == NULL_TREE)
+	      if (tmp == NULL_TREE || TREE_CODE (tmp) != INTEGER_CST)
 		return NULL_TREE;
-	      if (integer_zerop (tmp))
+	      if (wi::to_wide (tmp) == 0)
 		return constant_boolean_node (false, type);
 	    }
 	  return constant_boolean_node (true, type);
