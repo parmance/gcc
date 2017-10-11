@@ -5120,6 +5120,29 @@ extern bool anon_aggrname_p (const_tree);
 /* The tree and const_tree overload templates.   */
 namespace wi
 {
+  class unextended_tree
+  {
+  private:
+    const_tree m_t;
+
+  public:
+    unextended_tree () {}
+    unextended_tree (const_tree t) : m_t (t) {}
+
+    unsigned int get_precision () const;
+    const HOST_WIDE_INT *get_val () const;
+    unsigned int get_len () const;
+    const_tree get_tree () const { return m_t; }
+  };
+
+  template <>
+  struct int_traits <unextended_tree>
+  {
+    static const enum precision_type precision_type = VAR_PRECISION;
+    static const bool host_dependent_precision = false;
+    static const bool is_sign_extended = false;
+  };
+
   template <int N>
   class extended_tree
   {
@@ -5147,8 +5170,7 @@ namespace wi
     tree_to_widest_ref;
   typedef const generic_wide_int <extended_tree <ADDR_MAX_PRECISION> >
     tree_to_offset_ref;
-  typedef const generic_wide_int<wide_int_ref_storage<false, false> >
-    tree_to_wide_ref;
+  typedef const generic_wide_int <unextended_tree> tree_to_wide_ref;
 
   tree_to_widest_ref to_widest (const_tree);
   tree_to_offset_ref to_offset (const_tree);
@@ -5248,8 +5270,7 @@ wi::to_offset (const_tree t)
 inline wi::tree_to_wide_ref
 wi::to_wide (const_tree t)
 {
-  return wi::storage_ref (&TREE_INT_CST_ELT (t, 0), TREE_INT_CST_NUNITS (t),
-			  TYPE_PRECISION (TREE_TYPE (t)));
+  return t;
 }
 
 /* Convert INTEGER_CST T to a wide_int of precision PREC, extending or
@@ -5296,6 +5317,24 @@ wi::extended_tree <N>::get_len () const
        and needs to be as fast as possible, so there is no fallback for
        other casees.  */
     gcc_unreachable ();
+}
+
+inline unsigned int
+wi::unextended_tree::get_precision () const
+{
+  return TYPE_PRECISION (TREE_TYPE (m_t));
+}
+
+inline const HOST_WIDE_INT *
+wi::unextended_tree::get_val () const
+{
+  return &TREE_INT_CST_ELT (m_t, 0);
+}
+
+inline unsigned int
+wi::unextended_tree::get_len () const
+{
+  return TREE_INT_CST_NUNITS (m_t);
 }
 
 namespace wi
