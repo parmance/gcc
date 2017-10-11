@@ -2294,11 +2294,32 @@ test_comparisons ()
 /* Run all of the selftests, using the given VALUE_TYPE.  */
 
 template <class VALUE_TYPE>
-static void run_all_wide_int_tests ()
+static void run_wide_int_tests_for_type ()
 {
   test_printing <VALUE_TYPE> ();
   test_ops <VALUE_TYPE> ();
   test_comparisons <VALUE_TYPE> ();
+}
+
+/* Test that storage references copy correctly.  */
+
+static void
+test_wide_int_ref ()
+{
+  wi::hwi_with_prec s10 = wi::shwi (10, 20);
+  wi::hwi_with_prec s12 = wi::shwi (12, 22);
+  wi::hwi_with_prec s14 = wi::shwi (14, 29);
+
+  wide_int_ref x = s10;
+  wide_int_ref y = x;
+  x = s12;
+  ASSERT_EQ (y, 10);
+  ASSERT_EQ (y.get_precision (), 20);
+
+  y = x;
+  x = s14;
+  ASSERT_EQ (y, 12);
+  ASSERT_EQ (y.get_precision (), 22);
 }
 
 /* Run all of the selftests within this file, for all value types.  */
@@ -2306,10 +2327,17 @@ static void run_all_wide_int_tests ()
 void
 wide_int_cc_tests ()
 {
- run_all_wide_int_tests <wide_int> ();
- run_all_wide_int_tests <offset_int> ();
- run_all_wide_int_tests <widest_int> ();
+  run_wide_int_tests_for_type <wide_int> ();
+  run_wide_int_tests_for_type <offset_int> ();
+  run_wide_int_tests_for_type <widest_int> ();
+  test_wide_int_ref ();
 }
 
 } // namespace selftest
 #endif /* CHECKING_P */
+
+void
+foo (wide_int_ref *x, const wide_int &y)
+{
+  *x = y;
+}

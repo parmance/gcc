@@ -949,12 +949,18 @@ private:
 
 public:
   wide_int_ref_storage (const wi::storage_ref &);
+  wide_int_ref_storage (const wide_int_ref_storage &);
 
   template <typename T>
   wide_int_ref_storage (const T &);
 
   template <typename T>
   wide_int_ref_storage (const T &, unsigned int);
+
+  wide_int_ref_storage &operator = (const wide_int_ref_storage &);
+
+  template <typename T>
+  wide_int_ref_storage &operator = (const T &);
 };
 
 /* Create a reference from an existing reference.  */
@@ -963,6 +969,24 @@ inline wide_int_ref_storage <SE, HDP>::
 wide_int_ref_storage (const wi::storage_ref &x)
   : storage_ref (x)
 {}
+
+/* Copy constructor.  */
+template <bool SE, bool HDP>
+inline wide_int_ref_storage <SE, HDP>::
+wide_int_ref_storage (const wide_int_ref_storage &x)
+  : storage_ref (x)
+{
+  /* It would be correct to copy SCRATCH unconditionally, which might
+     make the assignment to VAL a conditional move opportunity.
+     However, it will often be the case that we can prove that
+     x.val doesn't point to x.scratch, in which case this code can
+     be removed as dead.  */
+  if (x.val == x.scratch)
+    {
+      memcpy (scratch, x.scratch, sizeof (scratch));
+      val = scratch;
+    }
+}
 
 /* Create a reference to integer X in its natural precision.  Note
    that the natural precision is host-dependent for primitive
@@ -982,6 +1006,32 @@ inline wide_int_ref_storage <SE, HDP>::
 wide_int_ref_storage (const T &x, unsigned int precision)
   : storage_ref (wi::int_traits <T>::decompose (scratch, precision, x))
 {
+}
+
+/* Normal assignment.  */
+template <bool SE, bool HDP>
+inline wide_int_ref_storage <SE, HDP> &
+wide_int_ref_storage <SE, HDP>::operator = (const wide_int_ref_storage &x)
+{
+  storage_ref::operator = (x);
+  /* See comment in the constructor for the rationale.  */
+  if (x.val == x.scratch)
+    {
+      memcpy (scratch, x.scratch, sizeof (scratch));
+      val = scratch;
+    }
+  return *this;
+}
+
+/* Make the reference refer to X, overwriting the previous reference.  */
+template <bool SE, bool HDP>
+template <typename T>
+inline wide_int_ref_storage <SE, HDP> &
+wide_int_ref_storage <SE, HDP>::operator = (const T &x)
+{
+  storage_ref::operator =
+    (wi::int_traits <T>::decompose (scratch, wi::get_precision (x), x));
+  return *this;
 }
 
 namespace wi
