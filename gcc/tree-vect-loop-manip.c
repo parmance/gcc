@@ -41,6 +41,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-scalar-evolution.h"
 #include "tree-vectorizer.h"
 #include "tree-ssa-loop-ivopts.h"
+#include "gimple-fold.h"
 
 /*************************************************************************
   Simple Loop Peeling Utilities
@@ -912,6 +913,50 @@ vect_update_ivs_after_vectorizer (loop_vec_info loop_vinfo,
     }
 }
 
+
+/* Return a gimple value containing the misalignment (measured in vector
+   elements) for the loop described by LOOP_VINFO, i.e. how many elements
+   it is away from a perfectly aligned address.  Add any new statements
+   to SEQ.  */
+
+static tree
+get_misalign_in_elems (gimple_seq *seq, loop_vec_info loop_vinfo)
+{
+  struct data_reference *dr = LOOP_VINFO_UNALIGNED_DR (loop_vinfo);
+  gimple *dr_stmt = DR_STMT (dr);
+  stmt_vec_info stmt_info = vinfo_for_stmt (dr_stmt);
+  tree vectype = STMT_VINFO_VECTYPE (stmt_info);
+
+  /* For speculative loops we need to align to the vector size.  */
+  unsigned int target_align = DR_TARGET_ALIGNMENT (dr);
+  gcc_assert (target_align != 0);
+
+  bool negative = tree_int_cst_compare (DR_STEP (dr), size_zero_node) < 0;
+  tree offset = (negative
+		 ? size_int (-TYPE_VECTOR_SUBPARTS (vectype) + 1)
+		 : size_zero_node);
+  tree start_addr = vect_create_addr_base_for_vector_ref (dr_stmt, seq,
+							  offset);
+  tree type = unsigned_type_for (TREE_TYPE (start_addr));
+  tree target_align_minus_1 = build_int_cst (type, target_align - 1);
+  HOST_WIDE_INT elem_size
+    = int_cst_value (TYPE_SIZE_UNIT (TREE_TYPE (vectype)));
+  tree elem_size_log = build_int_cst (type, exact_log2 (elem_size));
+
+  /* Create:  misalign_in_bytes = addr & (target_align - 1).  */
+  tree int_start_addr = gimple_convert (seq, type, start_addr);
+  tree misalign_in_bytes = gimple_build (seq, BIT_AND_EXPR, type,
+					 int_start_addr,
+					 target_align_minus_1);
+
+  /* Create:  misalign_in_elems = misalign_in_bytes / element_size.  */
+  tree misalign_in_elems = gimple_build (seq, RSHIFT_EXPR, type,
+					 misalign_in_bytes, elem_size_log);
+
+  return misalign_in_elems;
+}
+
+
 /* Function vect_gen_prolog_loop_niters
 
    Generate the number of iterations which should be peeled as prolog for the
@@ -923,7 +968,7 @@ vect_update_ivs_after_vectorizer (loop_vec_info loop_vinfo,
    If the misalignment of DR is known at compile time:
      addr_mis = int mis = DR_MISALIGNMENT (dr);
    Else, compute address misalignment in bytes:
-     addr_mis = addr & (vectype_align - 1)
+     addr_mis = addr & (target_align - 1)
 
    prolog_niters = ((VF - addr_mis/elem_size)&(VF-1))/step
 
@@ -970,41 +1015,26 @@ vect_gen_prolog_loop_niters (loop_vec_info loop_vinfo,
     }
   else
     {
-      bool negative = tree_int_cst_compare (DR_STEP (dr), size_zero_node) < 0;
-      tree offset = negative
-	  ? size_int (-TYPE_VECTOR_SUBPARTS (vectype) + 1) : size_zero_node;
-      tree start_addr = vect_create_addr_base_for_vector_ref (dr_stmt,
-							      &stmts, offset);
-      tree type = unsigned_type_for (TREE_TYPE (start_addr));
-      tree target_align_minus_1 = build_int_cst (type, target_align - 1);
+      tree misalign_in_elems = get_misalign_in_elems (&stmts, loop_vinfo);
+      tree type = TREE_TYPE (misalign_in_elems);
       HOST_WIDE_INT elem_size
 	= int_cst_value (TYPE_SIZE_UNIT (TREE_TYPE (vectype)));
-      tree elem_size_log = build_int_cst (type, exact_log2 (elem_size));
       HOST_WIDE_INT align_in_elems = target_align / elem_size;
       tree align_in_elems_minus_1 = build_int_cst (type, align_in_elems - 1);
       tree align_in_elems_tree = build_int_cst (type, align_in_elems);
-      tree misalign_in_bytes;
-      tree misalign_in_elems;
-
-      /* Create:  misalign_in_bytes = addr & (target_align - 1).  */
-      misalign_in_bytes
-	= fold_build2 (BIT_AND_EXPR, type, fold_convert (type, start_addr),
-		       target_align_minus_1);
-
-      /* Create:  misalign_in_elems = misalign_in_bytes / element_size.  */
-      misalign_in_elems
-	= fold_build2 (RSHIFT_EXPR, type, misalign_in_bytes, elem_size_log);
 
       /* Create:  (niters_type) ((align_in_elems - misalign_in_elems)
 				 & (align_in_elems - 1)).  */
+      bool negative = tree_int_cst_compare (DR_STEP (dr), size_zero_node) < 0;
       if (negative)
-	iters = fold_build2 (MINUS_EXPR, type, misalign_in_elems,
-			     align_in_elems_tree);
+	iters = gimple_build (&stmts, MINUS_EXPR, type,
+			      misalign_in_elems, align_in_elems_tree);
       else
-	iters = fold_build2 (MINUS_EXPR, type, align_in_elems_tree,
-			     misalign_in_elems);
-      iters = fold_build2 (BIT_AND_EXPR, type, iters, align_in_elems_minus_1);
-      iters = fold_convert (niters_type, iters);
+	iters = gimple_build (&stmts, MINUS_EXPR, type,
+			      align_in_elems_tree, misalign_in_elems);
+      iters = gimple_build (&stmts, BIT_AND_EXPR, type, iters,
+			    align_in_elems_minus_1);
+      iters = gimple_convert (&stmts, niters_type, iters);
       *bound = align_in_elems - 1;
     }
 
