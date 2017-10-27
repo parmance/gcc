@@ -27,8 +27,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "vec.h"
 #include "hash-table.h"
 #include "basic-block.h"
+#include "symbol-summary.h"
 #include "bitmap.h"
-
 
 /* Return true if the compiler should produce HSAIL.  */
 
@@ -417,6 +417,32 @@ is_a_helper <hsa_op_operand_list *>::test (hsa_op_base *p)
   return p->m_kind == BRIG_KIND_OPERAND_OPERAND_LIST;
 }
 
+/* Wavesize HSA operand.  */
+
+class hsa_op_wavesize : public hsa_op_base
+{
+public:
+  hsa_op_wavesize ();
+
+  /* Obstack based allocator. */
+  void *operator new (size_t);
+
+private:
+  /* All objects are deallocated by destroying the obstack, so make delete
+     inaccessible.  */
+  void operator delete (void *) {}
+};
+
+/* Report whether or not P is a wavesize operand.  */
+
+template <>
+template <>
+inline bool
+is_a_helper <hsa_op_wavesize *>::test (hsa_op_base *p)
+{
+  return p->m_kind == BRIG_KIND_OPERAND_WAVESIZE;
+}
+
 /* Opcodes of instructions that are not part of HSA but that we use to
    represent it nevertheless.  */
 
@@ -732,6 +758,30 @@ is_a_helper <hsa_insn_signal *>::test (hsa_insn_basic *p)
 {
   return (p->m_opcode == BRIG_OPCODE_SIGNAL
 	  || p->m_opcode == BRIG_OPCODE_SIGNALNORET);
+}
+
+/* HSA instruction for a memory fence.  */
+
+class hsa_insn_memfence : public hsa_insn_basic
+{
+public:
+  hsa_insn_memfence (BrigMemoryOrder memorder, BrigMemoryScope memscope);
+
+  /* Things like acquire/release/aligned.  */
+  BrigMemoryOrder m_memoryorder;
+
+  /* Global memory scope (and in HSA 1.0 also the inferred group one).  */
+  BrigMemoryScope m_scope;
+};
+
+/* Report whether or not P is a memory fence instruction.  */
+
+template <>
+template <>
+inline bool
+is_a_helper <hsa_insn_memfence *>::test (hsa_insn_basic *p)
+{
+  return p->m_opcode == BRIG_OPCODE_MEMFENCE;
 }
 
 /* HSA instruction to convert between flat addressing and segments.  */

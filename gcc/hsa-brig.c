@@ -48,6 +48,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "hsa-common.h"
 #include "gomp-constants.h"
 
+#include <stdio.h>
+
 /* Convert VAL to little endian form, if necessary.  */
 
 static uint16_t
@@ -474,7 +476,7 @@ brig_init (void)
   brig_operand.init (BRIG_SECTION_OPERAND_NAME);
   brig_initialized = true;
 
-  struct BrigDirectiveModule moddir;
+  BrigDirectiveModule moddir;
   memset (&moddir, 0, sizeof (moddir));
   moddir.base.byteCount = lendian16 (sizeof (moddir));
 
@@ -567,6 +569,8 @@ enqueue_op (hsa_op_base *op)
     op_queue.projected_size += sizeof (struct BrigOperandCodeList);
   else if (is_a <hsa_op_operand_list *> (op))
     op_queue.projected_size += sizeof (struct BrigOperandOperandList);
+  else if (is_a <hsa_op_wavesize *> (op))
+    op_queue.projected_size += sizeof (struct BrigOperandWavesize);
   else
     gcc_unreachable ();
   return ret;
@@ -1179,6 +1183,17 @@ emit_operand_list_operand (hsa_op_operand_list *operand_list)
   brig_operand.add (&out, sizeof (out));
 }
 
+/* Emit operand representing HSA WAVESIZE.  */
+
+static void
+emit_operand_wavesize ()
+{
+  struct BrigOperandWavesize out;
+  out.base.byteCount = lendian16 (sizeof (out));
+  out.base.kind = lendian16 (BRIG_KIND_OPERAND_WAVESIZE);
+  brig_operand.add (&out, sizeof (out));
+}
+
 /* Emit all operands queued for writing.  */
 
 static void
@@ -1199,6 +1214,8 @@ emit_queued_operands (void)
 	emit_code_list_operand (code_list);
       else if (hsa_op_operand_list *l = dyn_cast <hsa_op_operand_list *> (op))
 	emit_operand_list_operand (l);
+      else if (is_a <hsa_op_wavesize *> (op))
+	emit_operand_wavesize ();
       else
 	gcc_unreachable ();
     }
@@ -1776,6 +1793,23 @@ emit_srctype_insn (hsa_insn_srctype *insn)
   brig_insn_count++;
 }
 
+/* Emit memory fence instruction FENCE.  */
+static void
+emit_memfence_insn (hsa_insn_memfence *fence)
+{
+  struct BrigInstMemFence repr;
+  memset (&repr, 0, sizeof (repr));
+  repr.base.base.byteCount = lendian16 (sizeof (repr));
+  repr.base.base.kind = lendian16 (BRIG_KIND_INST_MEM_FENCE);
+  repr.base.opcode = lendian16 (fence->m_opcode);
+  repr.base.type = lendian16 (fence->m_type);
+
+  repr.memoryOrder = fence->m_memoryorder;
+  repr.globalSegmentMemoryScope = fence->m_scope;
+  repr.groupSegmentMemoryScope = fence->m_scope;
+  repr.imageSegmentMemoryScope = BRIG_MEMORY_SCOPE_NONE;
+}
+
 /* Emit packed instruction INSN.  */
 
 static void
@@ -1929,6 +1963,8 @@ emit_insn (hsa_insn_basic *insn)
     emit_cvt_insn (cvt);
   else if (hsa_insn_alloca *alloca = dyn_cast <hsa_insn_alloca *> (insn))
     emit_alloca_insn (alloca);
+  else if (hsa_insn_memfence *fence = dyn_cast <hsa_insn_memfence *> (insn))
+    emit_memfence_insn (fence);
   else
     emit_basic_insn (insn);
 }

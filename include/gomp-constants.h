@@ -256,4 +256,8 @@ enum gomp_map_kind
 /* Identifiers of device-specific target arguments.  */
 #define GOMP_TARGET_ARG_HSA_KERNEL_ATTRIBUTES	(1 << 8)
 
+/* The maximum number of BRIG function declaration replacements
+   we do per kernel call/finalization.  */
+#define GOMP_TARGET_HSA_MAX_BRIG_FUNC_DECL_REPL 4
+
 #endif

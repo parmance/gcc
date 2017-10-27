@@ -44,6 +44,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "tree-iterator.h"
 #include "opts.h"
 #include "gimplify.h"
+#include "hsa-common.h"
 
 static tree handle_packed_attribute (tree *, tree, tree, int, bool *);
 static tree handle_nocommon_attribute (tree *, tree, tree, int, bool *);
@@ -146,6 +147,9 @@ static tree handle_bnd_variable_size_attribute (tree *, tree, tree, int, bool *)
 static tree handle_bnd_legacy (tree *, tree, tree, int, bool *);
 static tree handle_bnd_instrument (tree *, tree, tree, int, bool *);
 static tree handle_fallthrough_attribute (tree *, tree, tree, int, bool *);
+static tree handle_hsa_kernel_attribute (tree *, tree, tree, int, bool *);
+static tree handle_hsa_function_attribute (tree *, tree, tree, int, bool *);
+static tree handle_hsa_variable_attribute (tree *, tree, tree, int, bool *);
 static tree handle_patchable_function_entry_attribute (tree *, tree, tree,
 						       int, bool *);
 
@@ -364,6 +368,12 @@ const struct attribute_spec c_common_attribute_table[] =
 			      handle_bnd_instrument, false },
   { "fallthrough",	      0, 0, false, false, false,
 			      handle_fallthrough_attribute, false },
+  { "hsa_kernel",             0, 0, true,  false, false,
+			      handle_hsa_kernel_attribute, false },
+  { "hsa_function",           0, 0, true,  false, false,
+			      handle_hsa_function_attribute, false },
+  { "hsa_group_segment",      0, 0, true,  false, false,
+			      handle_hsa_variable_attribute, false },
   { "patchable_function_entry",	1, 2, true, false, false,
 			      handle_patchable_function_entry_attribute,
 			      false },
@@ -3387,6 +3397,95 @@ handle_fallthrough_attribute (tree *, tree name, tree, int,
   warning (OPT_Wattributes, "%qE attribute ignored", name);
   *no_add_attrs = true;
   return NULL_TREE;
+}
+
+/* Handle the hsa kernel attribute; arguments as in struct
+   attribute_spec.handler.  */
+
+static tree
+handle_hsa_kernel_attribute (tree *node, tree name,
+			     tree ARG_UNUSED (args),
+			     int ARG_UNUSED (flags), bool *no_add_attrs)
+{
+  if (TREE_CODE (*node) != FUNCTION_DECL
+      || !hsa_gen_requested_p ())
+    {
+      warning (OPT_Wattributes, "%qE attribute ignored", name);
+      *no_add_attrs = true;
+      return NULL_TREE;
+    }
+
+  if (!flag_directhsa)
+    {
+      error ("%qE attribute attribute can only be used if -fdirecthsa "
+	     "command line option is specified", name);
+      *no_add_attrs = true;
+      return NULL_TREE;
+    }
+
+  if (!VOID_TYPE_P (TREE_TYPE (TREE_TYPE (*node)))
+      || !POINTER_TYPE_P (TREE_VALUE (TYPE_ARG_TYPES (TREE_TYPE (*node))))
+      || (TREE_VALUE (TREE_CHAIN (TYPE_ARG_TYPES (TREE_TYPE (*node))))
+	  != void_type_node))
+    {
+      error ("%qE attribute attribute can only be used on functions "
+	     "returning void and accepting a single pointer argument", name);
+      *no_add_attrs = true;
+      return NULL_TREE;
+    }
+
+  return NULL_TREE;
+}
+
+/* Handle an hsa attribute that makes sense on functions only; arguments as in
+   struct attribute_spec.handler.  */
+
+static tree
+handle_hsa_function_attribute (tree *node, tree name,
+			       tree ARG_UNUSED (args),
+			       int ARG_UNUSED (flags), bool *no_add_attrs)
+{
+  if (TREE_CODE (*node) != FUNCTION_DECL
+      || !hsa_gen_requested_p ())
+    {
+      warning (OPT_Wattributes, "%qE attribute ignored", name);
+      *no_add_attrs = true;
+      return NULL_TREE;
+    }
+
+  if (!flag_directhsa)
+    {
+      error ("%qE attribute attribute can only be used if -fdirecthsa "
+	     "command line option is specified", name);
+      *no_add_attrs = true;
+    }
+
+  return NULL_TREE;
+}
+
+/* Handle an hsa attribute that makes sense on statically allocated variables
+   only; arguments as in struct attribute_spec.handler.  */
+
+static tree
+handle_hsa_variable_attribute (tree *node, tree name,
+			       tree ARG_UNUSED (args),
+			       int ARG_UNUSED (flags), bool *no_add_attrs)
+{
+  if (!VAR_P (*node)
+      || !TREE_STATIC (*node)
+      || !hsa_gen_requested_p ())
+    {
+      warning (OPT_Wattributes, "%qE attribute ignored", name);
+      *no_add_attrs = true;
+      return NULL_TREE;
+    }
+
+  if (!flag_directhsa)
+    {
+      error ("%qE attribute attribute can only be used if -fdirecthsa "
+	     "command line option is specified", name);
+      *no_add_attrs = true;
+    }
 }
 
 static tree

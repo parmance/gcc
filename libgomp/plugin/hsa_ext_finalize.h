@@ -34,8 +34,7 @@ http://www.hsafoundation.com/html/Content/Runtime/Topics/Runtime_title_page.htm
 #ifndef _HSA_EXT_FINALIZE_H
 #define _HSA_EXT_FINALIZE_H 1
 
-struct BrigModuleHeader;
-typedef struct BrigModuleHeader *BrigModule_t;
+#include "hsa-brig-format.h"
 
 typedef enum {
   HSA_EXT_IMAGE_GEOMETRY_1D = 0,
